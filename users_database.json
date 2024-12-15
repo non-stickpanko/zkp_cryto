@@ -1,12 +1,19 @@
 {
     "users": [
         {
-            "username": "hello",
-            "password_hash": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+            "name": "Viola",
+            "password_hash": "f6d8f0dac4a886d900878a0f9bc3b5ea87959081e0db9540c9e334626f03947c",
+            "user_data": "gAAAAABnXw6BH-pOHyV_7emH2obqDNTvI8dNbAkkcdfXglA5nrSI8j1fasdNQHWgwEz9wGAUQymnKFXm5jiLTntMJLPXt1Xc81u4Ek006cVuGoFJB8T2tx0noUkut9QiA2SBSclbHzGU8Z2ln6a_l-OJbpH5ek1H5SgBqnCMeFi4GYWFwnUhNEq1fssaq09zbScUPYEmgy6H"
         },
         {
-            "username": "diya",
-            "password_hash": "da9660c38bcd7f409ec94a6c749af6c4cb1af22699071fc2d32a2d99acaeaf66"
+            "name": "Diya",
+            "password_hash": "da9660c38bcd7f409ec94a6c749af6c4cb1af22699071fc2d32a2d99acaeaf66",
+            "user_data": "gAAAAABnXw9FnkN8usswGj7uBwem8jWK4yitJUOHAn98jGtwBtdkdJDes-tRs7fyBs3z5uTcWAXXEBhyFgoU8jQNUHup4t82sfBQwO7nGi_wQmWfm59nps-gGpJlM8YUSHY53Rbm7_BvgKRBsdjVUYT59zL-89WHnQn15h1aK-g8T9BE4xIvh0yC5tKiHOrKzdgVagwXkxK4"
+        },
+        {
+            "name": "Zaid",
+            "password_hash": "f7790ea7690586f680499d07eb24288f932af154d597a2d3576876ba8cdb893b",
+            "user_data": "gAAAAABnXw_w2K6bquMcpphDznhknM1sdEoD5In-b9HR6IFKIBQ0D0QVdyGCXCEw_M0-ql_CI_yj8412mEGum29-8ras1WlwKzusJ90--jncS-FKdwEo2R5ewuCs_NWkpQizv7QjAsV4zKAcG1St0MfeLwPTMk6FwaKcay9F9bttY0RqfzXJb79IeT83aP2rEbXBgHDjQHzF"
         }
     ]
 }
