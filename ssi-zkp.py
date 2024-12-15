@@ -1,356 +1,211 @@
-import hashlib
+from hashlib import sha256
 import tkinter as tk
-from tkinter import messagebox, ttk
-from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.hazmat.primitives import hashes
-import re
+from tkinter import messagebox, simpledialog, Toplevel
+import sqlite3
+import json
 
-# Utility Functions
-def hash_data(data: str) -> str:
-    """Hash input data using SHA-256."""
-    return hashlib.sha256(data.encode()).hexdigest()
+# Mock function for hash computation (Merkle tree hash and general purposes)
+def compute_hash(data):
+    return sha256(data.encode()).hexdigest()
 
-# Issuer Module
-def issue_credential(attributes: dict):
-    """Generate credentials for given attributes."""
-    hashed_attributes = {
-        key: hash_data(f"{key}:{value}") for key, value in attributes.items()
-    }
-    concatenated_hashes = ''.join(hashed_attributes.values())
-    root_hash = hash_data(concatenated_hashes)
-    private_key = ec.generate_private_key(ec.SECP256R1())
-    signature = private_key.sign(root_hash.encode(), ec.ECDSA(hashes.SHA256()))
+# Step 1: Medical Records and Merkle Tree Construction
+class MerkleTree:
+    def __init__(self, records):
+        self.records = records
+        self.leaves = [compute_hash(record) for record in records]
+        self.tree = self._build_tree(self.leaves)
 
-    return {
-        "root_hash": root_hash,
-        "attributes": attributes,
-        "hashed_attributes": hashed_attributes,
-        "issuer_signature": signature,
-    }
+    def _build_tree(self, leaves):
+        tree = [leaves]
+        while len(leaves) > 1:
+            next_level = []
+            for i in range(0, len(leaves), 2):
+                left = leaves[i]
+                right = leaves[i + 1] if i + 1 < len(leaves) else left
+                next_level.append(compute_hash(left + right))
+            leaves = next_level
+            tree.append(leaves)
+        return tree
 
-# Holder Module
-def generate_proof(credentials, attribute_key, condition):
-    """Simplified proof generation: Check condition and simulate proof."""
-    if attribute_key not in credentials["attributes"]:
-        raise ValueError("Attribute not found in credentials.")
+    def get_root(self):
+        return self.tree[-1][0] if self.tree else None
 
-    attribute_value = int(credentials["attributes"][attribute_key])
-    is_condition_met = int(attribute_value > condition)
-    proof = {
-        "attribute_key": attribute_key,
-        "attribute_value": attribute_value,
-        "condition": condition,
-        "is_condition_met": is_condition_met
-    }
+    def get_proof(self, index):
+        proof = []
+        for level in self.tree[:-1]:
+            sibling_index = index ^ 1
+            proof.append(level[sibling_index] if sibling_index < len(level) else None)
+            index //= 2
+        return proof
 
-    return proof
+# Step 2: Database Setup
+class DatabaseManager:
+    def __init__(self):
+        self.conn = sqlite3.connect("medical_records.db")
+        self.cursor = self.conn.cursor()
+        self._setup_tables()
 
-# Verifier Module
-def verify_proof(credentials, proof):
-    """Simplified proof verification."""
-    attribute_key = proof["attribute_key"]
-    if attribute_key not in credentials["attributes"]:
-        return False
+    def _setup_tables(self):
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS patient_details (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                eligibility INTEGER NOT NULL,
+                age INTEGER NOT NULL,
+                access_details TEXT
+            )
+        """)
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS patient_records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                doctor TEXT NOT NULL,
+                diagnosis TEXT NOT NULL,
+                treatment TEXT NOT NULL
+            )
+        """)
+        self.conn.commit()
 
-    expected_value = int(credentials["attributes"][attribute_key])
-    is_condition_met = proof["is_condition_met"] == int(expected_value > proof["condition"])
-    return is_condition_met
+    def add_patient(self, name, eligibility, age, date, doctor, diagnosis, treatment):
+        self.cursor.execute("INSERT INTO patient_details (name, eligibility, age, access_details) VALUES (?, ?, ?, ?)", (name, eligibility, age, ""))
+        self.cursor.execute("INSERT INTO patient_records (date, doctor, diagnosis, treatment) VALUES (?, ?, ?, ?)", (date, doctor, diagnosis, treatment))
+        self.conn.commit()
 
-class SocialMediaRecoveryApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Social Media Account Recovery")
-        self.root.geometry("400x500")
-        self.root.configure(bg='#f0f2f5')
-        
-        # Application-wide variables
-        self.credentials = None
-        self.proof = None
-        
-        self.create_main_window()
-    
-    def create_main_window(self):
-        # Clear any existing widgets
-        for widget in self.root.winfo_children():
-            widget.destroy()
-        
-        # Main frame
-        main_frame = tk.Frame(self.root, bg='#f0f2f5')
-        main_frame.pack(expand=True, fill='both', padx=20, pady=20)
-        
-        # Logo or Title
-        title_label = tk.Label(main_frame, text="Social Media Recovery", 
-                               font=('Arial', 20, 'bold'), 
-                               bg='#f0f2f5', 
-                               fg='#1877f2')
-        title_label.pack(pady=(0, 20))
-        
-        # Buttons
-        button_style = {
-            'font': ('Arial', 12),
-            'width': 25,
-            'bg': '#1877f2',
-            'fg': 'white',
-            'activebackground': '#166fe5',
-            'activeforeground': 'white',
-            'relief': tk.FLAT,
-            'borderwidth': 0
+    def get_patients(self):
+        return self.cursor.execute("SELECT id, name FROM patient_details").fetchall()
+
+    def get_eligibility(self, patient_id):
+        result = self.cursor.execute("SELECT eligibility FROM patient_details WHERE id = ?", (patient_id,)).fetchone()
+        return result[0] if result else 0
+
+    def get_age(self, patient_id):
+        result = self.cursor.execute("SELECT age FROM patient_details WHERE id = ?", (patient_id,)).fetchone()
+        return result[0] if result else None
+
+    def get_record(self, patient_id):
+        result = self.cursor.execute("SELECT date, doctor, diagnosis, treatment FROM patient_records WHERE id = ?", (patient_id,)).fetchone()
+        return result if result else None
+
+    def update_access_details(self, patient_id, details):
+        self.cursor.execute("UPDATE patient_details SET access_details = ? WHERE id = ?", (details, patient_id))
+        self.conn.commit()
+
+# Step 3: ZKP Setup for Access Rights
+class MedicalRecordsAccess:
+    def __init__(self, records):
+        self.merkle_tree = MerkleTree(records)
+
+    def generate_proof(self, record_index):
+        record_hash = self.merkle_tree.leaves[record_index]
+        proof = self.merkle_tree.get_proof(record_index)
+        return {
+            "record_hash": record_hash,
+            "proof": proof,
+            "root": self.merkle_tree.get_root(),
+            "index": record_index
         }
-        
-        issue_btn = tk.Button(main_frame, text="Issue Credentials", 
-                              command=self.open_issue_window, **button_style)
-        issue_btn.pack(pady=10)
-        
-        generate_proof_btn = tk.Button(main_frame, text="Generate Proof", 
-                                       command=self.open_generate_proof_window, **button_style)
-        generate_proof_btn.pack(pady=10)
-        
-        verify_proof_btn = tk.Button(main_frame, text="Verify Proof", 
-                                     command=self.open_verify_proof_window, **button_style)
-        verify_proof_btn.pack(pady=10)
-    
-    def create_styled_entry(self, parent, label_text):
-        """Create a styled entry with label"""
-        frame = tk.Frame(parent, bg='#f0f2f5')
-        frame.pack(fill='x', pady=5)
-        
-        label = tk.Label(frame, text=label_text, 
-                         font=('Arial', 10), 
-                         bg='#f0f2f5')
-        label.pack(anchor='w')
-        
-        entry = tk.Entry(frame, 
-                         font=('Arial', 12), 
-                         relief=tk.FLAT, 
-                         bg='white', 
-                         highlightthickness=1, 
-                         highlightcolor='#1877f2')
-        entry.pack(fill='x')
-        
-        return entry
-    
-    def open_issue_window(self):
-        # Create a new top-level window
-        issue_window = tk.Toplevel(self.root)
-        issue_window.title("Issue Credentials")
-        issue_window.geometry("400x500")
-        issue_window.configure(bg='#f0f2f5')
-        
-        # Main frame
-        main_frame = tk.Frame(issue_window, bg='#f0f2f5')
-        main_frame.pack(expand=True, fill='both', padx=20, pady=20)
-        
-        # Title
-        title_label = tk.Label(main_frame, text="Issue Account Credentials", 
-                               font=('Arial', 16, 'bold'), 
-                               bg='#f0f2f5', 
-                               fg='#1877f2')
-        title_label.pack(pady=(0, 20))
-        
-        # Entries
-        self.name_entry = self.create_styled_entry(main_frame, "Full Name")
-        self.age_entry = self.create_styled_entry(main_frame, "Age")
-        
-        # Issue Button
-        issue_btn = tk.Button(main_frame, text="Issue Credentials", 
-                              command=lambda: self.issue_credentials(issue_window), 
-                              font=('Arial', 12),
-                              width=25,
-                              bg='#1877f2',
-                              fg='white',
-                              activebackground='#166fe5',
-                              activeforeground='white',
-                              relief=tk.FLAT)
-        issue_btn.pack(pady=20)
-        
-        # Back Button
-        back_btn = tk.Button(main_frame, text="Back to Main Menu", 
-                             command=issue_window.destroy, 
-                             font=('Arial', 10),
-                             bg='#f0f2f5',
-                             fg='#1877f2',
-                             activebackground='#f0f2f5',
-                             activeforeground='#166fe5',
-                             relief=tk.FLAT)
-        back_btn.pack()
-    
-    def issue_credentials(self, window):
-        try:
-            name = self.name_entry.get()
-            age = self.age_entry.get()
-            
-            # Validate inputs
-            if not name or not age:
-                messagebox.showerror("Error", "Please fill in all fields.")
-                return
-            
-            if not re.match(r'^[A-Za-z\s]+$', name):
-                messagebox.showerror("Error", "Name should contain only letters.")
-                return
-            
-            if not age.isdigit() or int(age) < 13 or int(age) > 120:
-                messagebox.showerror("Error", "Please enter a valid age.")
-                return
-            
-            attributes = {"name": name, "age": age}
-            self.credentials = issue_credential(attributes)
-            messagebox.showinfo("Success", "Credentials Issued Successfully!")
-            window.destroy()
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to issue credentials: {e}")
-    
-    def open_generate_proof_window(self):
-        if not self.credentials:
-            messagebox.showerror("Error", "Please issue credentials first!")
-            return
-        
-        # Create a new top-level window
-        proof_window = tk.Toplevel(self.root)
-        proof_window.title("Generate Proof")
-        proof_window.geometry("400x500")
-        proof_window.configure(bg='#f0f2f5')
-        
-        # Main frame
-        main_frame = tk.Frame(proof_window, bg='#f0f2f5')
-        main_frame.pack(expand=True, fill='both', padx=20, pady=20)
-        
-        # Title
-        title_label = tk.Label(main_frame, text="Generate Account Recovery Proof", 
-                               font=('Arial', 16, 'bold'), 
-                               bg='#f0f2f5', 
-                               fg='#1877f2')
-        title_label.pack(pady=(0, 20))
-        
-        # Hint about current credentials
-        hint_label = tk.Label(main_frame, 
-                              text=f"Current Credentials:\nName: {self.credentials['attributes']['name']}\nAge: {self.credentials['attributes']['age']}", 
-                              font=('Arial', 10), 
-                              bg='#f0f2f5', 
-                              fg='#555')
-        hint_label.pack(pady=(0, 10))
-        
-        # Entries
-        self.attribute_entry = self.create_styled_entry(main_frame, "Attribute to Prove (e.g., age)")
-        self.condition_entry = self.create_styled_entry(main_frame, "Condition Value (e.g., 18)")
-        
-        # Generate Proof Button
-        generate_btn = tk.Button(main_frame, text="Generate Proof", 
-                                 command=lambda: self.generate_proof(proof_window), 
-                                 font=('Arial', 12),
-                                 width=25,
-                                 bg='#1877f2',
-                                 fg='white',
-                                 activebackground='#166fe5',
-                                 activeforeground='white',
-                                 relief=tk.FLAT)
-        generate_btn.pack(pady=20)
-        
-        # Back Button
-        back_btn = tk.Button(main_frame, text="Back to Main Menu", 
-                             command=proof_window.destroy, 
-                             font=('Arial', 10),
-                             bg='#f0f2f5',
-                             fg='#1877f2',
-                             activebackground='#f0f2f5',
-                             activeforeground='#166fe5',
-                             relief=tk.FLAT)
-        back_btn.pack()
-    
-    def generate_proof(self, window):
-        try:
-            attribute_key = self.attribute_entry.get()
-            condition_str = self.condition_entry.get()
-            
-            # Validate inputs
-            if not attribute_key or not condition_str:
-                messagebox.showerror("Error", "Please fill in all fields.")
-                return
-            
-            condition = int(condition_str)
-            
-            self.proof = generate_proof(self.credentials, attribute_key, condition)
-            messagebox.showinfo("Success", f"Proof generated for {attribute_key} > {condition}.")
-            window.destroy()
-        except ValueError:
-            messagebox.showerror("Error", "Invalid condition. Please enter a number.")
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to generate proof: {e}")
-    
-    def open_verify_proof_window(self):
-        if not self.proof or not self.credentials:
-            messagebox.showerror("Error", "Please generate a proof first!")
-            return
-        
-        # Create a new top-level window
-        verify_window = tk.Toplevel(self.root)
-        verify_window.title("Verify Proof")
-        verify_window.geometry("400x500")
-        verify_window.configure(bg='#f0f2f5')
-        
-        # Main frame
-        main_frame = tk.Frame(verify_window, bg='#f0f2f5')
-        main_frame.pack(expand=True, fill='both', padx=20, pady=20)
-        
-        # Title
-        title_label = tk.Label(main_frame, text="Verify Account Recovery Proof", 
-                               font=('Arial', 16, 'bold'), 
-                               bg='#f0f2f5', 
-                               fg='#1877f2')
-        title_label.pack(pady=(0, 20))
-        
-        # Proof Details
-        details_frame = tk.Frame(main_frame, bg='#f0f2f5')
-        details_frame.pack(fill='x', pady=10)
-        
-        details = [
-            f"Attribute: {self.proof['attribute_key']}",
-            f"Value: {self.proof['attribute_value']}",
-            f"Condition: > {self.proof['condition']}"
-        ]
-        
-        for detail in details:
-            tk.Label(details_frame, 
-                     text=detail, 
-                     font=('Arial', 10), 
-                     bg='#f0f2f5', 
-                     anchor='w').pack(fill='x')
-        
-        # Verify Button
-        verify_btn = tk.Button(main_frame, text="Verify Proof", 
-                               command=lambda: self.verify_proof(verify_window), 
-                               font=('Arial', 12),
-                               width=25,
-                               bg='#1877f2',
-                               fg='white',
-                               activebackground='#166fe5',
-                               activeforeground='white',
-                               relief=tk.FLAT)
-        verify_btn.pack(pady=20)
-        
-        # Back Button
-        back_btn = tk.Button(main_frame, text="Back to Main Menu", 
-                             command=verify_window.destroy, 
-                             font=('Arial', 10),
-                             bg='#f0f2f5',
-                             fg='#1877f2',
-                             activebackground='#f0f2f5',
-                             activeforeground='#166fe5',
-                             relief=tk.FLAT)
-        back_btn.pack()
-    
-    def verify_proof(self, window):
-        try:
-            is_valid = verify_proof(self.credentials, self.proof)
-            if is_valid:
-                messagebox.showinfo("Success", "Account Recovery Proof Validated!")
-                window.destroy()
-            else:
-                messagebox.showerror("Invalid", "The proof is invalid.")
-        except Exception as e:
-            messagebox.showerror("Error", f"Verification failed: {e}")
 
-# Main Execution
+# Step 4: Tkinter User Interface
+class MedicalAccessApp:
+    def __init__(self, root, db_manager):
+        self.root = root
+        self.db_manager = db_manager
+
+        self.root.title("Medical Records Access")
+        self.root.attributes('-fullscreen', True)
+
+        # Header
+        self.header = tk.Label(root, text="Medical Records Access Portal", font=("Arial", 24), pady=20)
+        self.header.pack()
+
+        # Instruction
+        self.instruction = tk.Label(root, text="Select a patient to access their medical record:", font=("Arial", 16))
+        self.instruction.pack()
+
+        # List of Patients
+        self.listbox = tk.Listbox(root, font=("Arial", 14), width=50, height=10)
+        self.populate_patients()
+        self.listbox.pack(pady=20)
+
+        # Access Button
+        self.access_button = tk.Button(root, text="Access Record", font=("Arial", 14), command=self.ask_for_age)
+        self.access_button.pack(pady=10)
+
+        # Exit Button
+        self.exit_button = tk.Button(root, text="Exit", font=("Arial", 14), command=root.quit)
+        self.exit_button.pack(pady=10)
+
+    def populate_patients(self):
+        self.listbox.delete(0, tk.END)
+        patients = self.db_manager.get_patients()
+        for patient_id, name in patients:
+            self.listbox.insert(tk.END, f"{patient_id}: {name}")
+
+    def ask_for_age(self):
+        selected = self.listbox.curselection()
+        if not selected:
+            messagebox.showerror("Error", "Please select a patient.")
+            return
+
+        patient_id = int(self.listbox.get(selected[0]).split(":")[0])
+        self.prompt_age(patient_id)
+
+    def prompt_age(self, patient_id):
+        age = simpledialog.askinteger("Age Verification", "Please enter the patient's age:")
+        if age is None:
+            return
+
+        actual_age = self.db_manager.get_age(patient_id)
+        if age == actual_age:
+            self.show_record_window(patient_id)
+        else:
+            messagebox.showerror("Error", "Age verification failed. Access denied.")
+
+    def show_record_window(self, patient_id):
+        record = self.db_manager.get_record(patient_id)
+        if not record:
+            messagebox.showerror("Error", "No record found for this patient.")
+            return
+
+        date, doctor, diagnosis, treatment = record
+        record_content = f"Date: {date}\nDoctor: {doctor}\nDiagnosis: {diagnosis}\nTreatment: {treatment}"
+        proof_data = MedicalRecordsAccess([record_content]).generate_proof(0)
+        proof_details = json.dumps(proof_data, indent=4)
+
+        # Update access details in the database
+        access_details = f"Accessed on: {proof_details}"
+        self.db_manager.update_access_details(patient_id, access_details)
+
+        # Create a new window to display the record
+        record_window = Toplevel(self.root)
+        record_window.title("Patient Record")
+        record_window.geometry("600x400")
+
+        tk.Label(record_window, text="Patient Record", font=("Arial", 18), pady=10).pack()
+        record_text = tk.Text(record_window, font=("Arial", 14), wrap=tk.WORD, height=15, width=70)
+        record_text.insert(tk.END, record_content)
+        record_text.pack()
+        record_text.configure(state="disabled")
+
+        tk.Label(record_window, text="Proof Details", font=("Arial", 18), pady=10).pack()
+        proof_text = tk.Text(record_window, font=("Arial", 12), wrap=tk.WORD, height=15, width=70)
+        proof_text.insert(tk.END, proof_details)
+        proof_text.pack()
+        proof_text.configure(state="disabled")
+
+# Example Usage
 if __name__ == "__main__":
+    # Database setup
+    db_manager = DatabaseManager()
+
+    # Populate database with sample data (if empty)
+    if not db_manager.get_patients():
+        db_manager.add_patient("Alice", 1, 25, "2024-12-10", "Dr. Smith", "Flu", "Rest and hydration")
+        db_manager.add_patient("Bob", 0, 17, "2024-12-11", "Dr. Adams", "Cold", "Over-the-counter meds")
+        db_manager.add_patient("Charlie", 1, 40, "2024-12-12", "Dr. Johnson", "Back Pain", "Physical therapy")
+        db_manager.add_patient("Dana", 1, 30, "2024-12-13", "Dr. Lee", "Allergy", "Antihistamines")
+
+    # Create and run the Tkinter app
     root = tk.Tk()
-    app = SocialMediaRecoveryApp(root)
+    app = MedicalAccessApp(root, db_manager)
     root.mainloop()
