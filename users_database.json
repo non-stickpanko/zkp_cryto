@@ -1,0 +1,12 @@
+{
+    "users": [
+        {
+            "username": "hello",
+            "password_hash": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        },
+        {
+            "username": "diya",
+            "password_hash": "da9660c38bcd7f409ec94a6c749af6c4cb1af22699071fc2d32a2d99acaeaf66"
+        }
+    ]
+}
