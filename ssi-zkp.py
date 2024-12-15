@@ -128,7 +128,7 @@ class MedicalAccessApp:
         self.listbox.pack(pady=20)
 
         # Access Button
-        self.access_button = tk.Button(root, text="Access Record", font=("Arial", 14), command=self.ask_for_age)
+        self.access_button = tk.Button(root, text="Access Record", font=("Arial", 14), command=self.ask_for_patient_details)
         self.access_button.pack(pady=10)
 
         # Exit Button
@@ -141,25 +141,42 @@ class MedicalAccessApp:
         for patient_id, name in patients:
             self.listbox.insert(tk.END, f"{patient_id}: {name}")
 
-    def ask_for_age(self):
+    def ask_for_patient_details(self):
         selected = self.listbox.curselection()
         if not selected:
             messagebox.showerror("Error", "Please select a patient.")
             return
 
         patient_id = int(self.listbox.get(selected[0]).split(":")[0])
-        self.prompt_age(patient_id)
+        self.prompt_patient_details(patient_id)
 
-    def prompt_age(self, patient_id):
-        age = simpledialog.askinteger("Age Verification", "Please enter the patient's age:")
-        if age is None:
+    def prompt_patient_details(self, patient_id):
+        # Request for Patient ID, Name, Age, and Eligibility for validation
+        name = simpledialog.askstring("Patient Details", "Please enter the patient's name:")
+        if not name:
+            return
+        
+        age = simpledialog.askinteger("Patient Details", "Please enter the patient's age:")
+        if not age:
             return
 
-        actual_age = self.db_manager.get_age(patient_id)
-        if age == actual_age:
-            self.show_record_window(patient_id)
+        eligibility = simpledialog.askinteger("Patient Details", "Please enter the patient's eligibility (1 for eligible, 0 for not eligible):")
+        if eligibility is None:
+            return
+
+        # Fetch stored patient details for validation
+        stored_name = self.db_manager.cursor.execute("SELECT name FROM patient_details WHERE id = ?", (patient_id,)).fetchone()
+        stored_age = self.db_manager.cursor.execute("SELECT age FROM patient_details WHERE id = ?", (patient_id,)).fetchone()
+        stored_eligibility = self.db_manager.cursor.execute("SELECT eligibility FROM patient_details WHERE id = ?", (patient_id,)).fetchone()
+
+        # Validate details
+        if stored_name and stored_age and stored_eligibility:
+            if name == stored_name[0] and age == stored_age[0] and eligibility == stored_eligibility[0]:
+                self.show_record_window(patient_id)
+            else:
+                messagebox.showerror("Error", "Patient details do not match. Access denied.")
         else:
-            messagebox.showerror("Error", "Age verification failed. Access denied.")
+            messagebox.showerror("Error", "No such patient found.")
 
     def show_record_window(self, patient_id):
         record = self.db_manager.get_record(patient_id)
