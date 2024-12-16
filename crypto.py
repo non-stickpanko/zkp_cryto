@@ -3,11 +3,100 @@ from tkinter import messagebox, simpledialog, Toplevel
 import hashlib
 import json
 from cryptography.fernet import Fernet
-import base64
 
 # Helper function to compute a hash
 def compute_hash(data):
     return hashlib.sha256(data.encode()).hexdigest()
+
+# Merkle Tree Implementation
+class MerkleTree:
+    def __init__(self, data_list):
+        """
+        Initialize the Merkle Tree with a list of data items.
+        :param data_list: List of strings (user data).
+        """
+        self.leaves = [compute_hash(data) for data in data_list]  # Hash all data items
+        self.root = self.build_tree(self.leaves)
+
+    def build_tree(self, hashes):
+        """
+        Build the Merkle Tree and return the root hash.
+        :param hashes: List of leaf hashes.
+        :return: Root hash of the Merkle Tree.
+        """
+        if len(hashes) == 1:
+            return hashes[0]  # Root hash
+
+        # Pairwise hash combination
+        next_level = []
+        for i in range(0, len(hashes), 2):
+            # If odd number of hashes, duplicate the last one
+            left = hashes[i]
+            right = hashes[i + 1] if i + 1 < len(hashes) else left
+            combined_hash = compute_hash(left + right)  # Concatenate and hash
+            next_level.append(combined_hash)
+
+        return self.build_tree(next_level)
+
+    def get_root(self):
+        """
+        Get the Merkle root hash.
+        :return: Root hash.
+        """
+        return self.root
+
+# ZKP Setup for User Authentication
+class UserAuthenticationZKP:
+    def __init__(self, records):
+        self.records = records
+        self.tree = MerkleTree(records)  # Create a Merkle Tree from records
+        self.merkle_root = self.tree.get_root()
+
+    def generate_proof(self, record_index):
+        """
+        Generate a Merkle proof for a specific record.
+        :param record_index: Index of the record in the original data.
+        :return: Merkle proof with sibling hashes.
+        """
+        proof = []
+        hashes = self.tree.leaves
+        current_index = record_index
+
+        # Generate proof by traversing up the tree
+        while len(hashes) > 1:
+            next_level = []
+            for i in range(0, len(hashes), 2):
+                left = hashes[i]
+                right = hashes[i + 1] if i + 1 < len(hashes) else left
+
+                # Add sibling to proof
+                if i == current_index or i + 1 == current_index:
+                    proof.append(right if i == current_index else left)
+
+                # Compute parent hash
+                combined_hash = compute_hash(left + right)
+                next_level.append(combined_hash)
+
+            # Move to next level
+            current_index //= 2
+            hashes = next_level
+
+        return proof
+
+    def verify_proof(self, record, proof):
+        """
+        Verify the Merkle proof for a specific record.
+        :param record: The original record data.
+        :param proof: List of sibling hashes in the proof.
+        :return: True if the proof is valid, False otherwise.
+        """
+        current_hash = compute_hash(record)
+
+        for sibling_hash in proof:
+            # Combine hashes based on sibling's position
+            current_hash = compute_hash(current_hash + sibling_hash)
+
+        return current_hash == self.merkle_root
 
 # Encryption/Decryption Setup
 class Encryption:
@@ -41,24 +130,20 @@ class DatabaseManager:
         with open(self.db_file, 'w') as f:
             json.dump(self.data, f, indent=4)
 
-    def add_user(self, name, password_hash, encrypted_data):
+    def add_user(self, name, password_hash, encrypted_data, merkle_root):
         if any(user['name'] == name for user in self.users):
             return False  # Name already exists
-        self.data["users"].append({"name": name, "password_hash": password_hash, "user_data": encrypted_data})
+        self.data["users"].append({
+            "name": name,
+            "password_hash": password_hash,
+            "user_data": encrypted_data,
+            "merkle_root": merkle_root
+        })
         self.save_data()
         return True
 
     def get_user(self, name):
         return next((user for user in self.users if user['name'] == name), None)
-
-# ZKP Setup for User Authentication
-class UserAuthenticationZKP:
-    def __init__(self, records):
-        self.records = records
-
-    def generate_proof(self, record_index):
-        # For ZKP, we just return the index and the corresponding hash for now (simplified version)
-        return {"record_index": record_index, "record_hash": compute_hash(self.records[record_index])}
 
 # Tkinter User Interface
 class UserVerificationApp:
@@ -100,14 +185,23 @@ class UserVerificationApp:
         medications = simpledialog.askstring("Medications", "Enter your medications:")
         last_appointment = simpledialog.askstring("Last Appointment", "Enter the date of your last appointment:")
 
+        # Combine records for Merkle hashing
+        records = [
+            f"DOB: {dob}",
+            f"Doctor: {doctor}",
+            f"Medications: {medications}",
+            f"Last Appointment: {last_appointment}"
+        ]
+        zkp = UserAuthenticationZKP(records)
+
         # Encrypt additional user details
-        encrypted_data = self.encryption.encrypt_data(f"DOB: {dob}\nDoctor: {doctor}\nMedications: {medications}\nLast Appointment: {last_appointment}")
+        encrypted_data = self.encryption.encrypt_data("\n".join(records))
 
         # Hash the password
         hashed_password = compute_hash(password)
 
-        # Add user to the database
-        if self.db_manager.add_user(name, hashed_password, encrypted_data):
+        # Add user to the database with Merkle root
+        if self.db_manager.add_user(name, hashed_password, encrypted_data, zkp.merkle_root):
             messagebox.showinfo("Success", "Registration successful!")
         else:
             messagebox.showerror("Error", "Name already exists.")
@@ -134,7 +228,7 @@ class UserVerificationApp:
     def show_user_details(self, user):
         # Decrypt and display user details
         decrypted_data = self.encryption.decrypt_data(user['user_data'])
-        
+
         # Create a new window to display user details
         verification_window = Toplevel(self.root)
         verification_window.title("User Details")

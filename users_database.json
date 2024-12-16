@@ -14,6 +14,12 @@
             "name": "Zaid",
             "password_hash": "f7790ea7690586f680499d07eb24288f932af154d597a2d3576876ba8cdb893b",
             "user_data": "gAAAAABnXw_w2K6bquMcpphDznhknM1sdEoD5In-b9HR6IFKIBQ0D0QVdyGCXCEw_M0-ql_CI_yj8412mEGum29-8ras1WlwKzusJ90--jncS-FKdwEo2R5ewuCs_NWkpQizv7QjAsV4zKAcG1St0MfeLwPTMk6FwaKcay9F9bttY0RqfzXJb79IeT83aP2rEbXBgHDjQHzF"
+        },
+        {
+            "name": "Ziya",
+            "password_hash": "a35baaecf57ff577ab197b69e2ddc5ea65dd2096239d28e9ca4f0e20e4ca18e1",
+            "user_data": "gAAAAABnX73zYVeWvqQAZ9Z4bSB0dwue9JACk52m0VOHPteYBZ8dJ_21ZylwhrqjB8JHj7wJjg3jEzKNI2iQHWbScuF5cNJ8U3ObsvmXOCfX94_0cMdloe5w-ZHiNGnoGAlZi4sbVsT-gr6ornlxYI01wRxwfWS6sZUMo-XNwwkKLIHnvQuDN7AsT-H7YipcYtye6D5mkRcw",
+            "merkle_root": "09df377f8dc3b4c03a63d58a6d95285b4dd45a41ae2a4819f7117605a44ed062"
         }
     ]
 }
